@@ -1,2 +1,4 @@
 config:
   kubernetes:context: 4ir-guestbook
+  4ir-guestbook-monitoring:grafanaAdminPassword:
+    secure: AAABAJv/Hxulf7OVGV2NTLhXU2hquD4G6YiriNUhx/rHKbednWwLwT04
