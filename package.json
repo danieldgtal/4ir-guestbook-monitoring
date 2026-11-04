@@ -1,0 +1,12 @@
+{
+    "name": "4ir-guestbook-monitoring",
+    "main": "index.ts",
+    "devDependencies": {
+        "@types/node": "^18",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@pulumi/kubernetes": "^4.34.3",
+        "@pulumi/pulumi": "^3.113.0"
+    }
+}

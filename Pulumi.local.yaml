@@ -1,0 +1,2 @@
+config:
+  kubernetes:context: 4ir-guestbook
