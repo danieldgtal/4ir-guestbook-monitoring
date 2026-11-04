@@ -1,61 +1,85 @@
- # AWS TypeScript Pulumi Template
+# Guestbook Monitoring with Pulumi
 
- A minimal Pulumi template for provisioning AWS infrastructure using TypeScript. This template creates an Amazon S3 bucket and exports its name.
+This project extends the Pulumi Kubernetes Guestbook example with Prometheus
+and Grafana. It runs the PHP frontend and Redis leader and replica on Kubernetes,
+and provisions a Grafana dashboard for frontend availability, probe duration,
+memory usage, and Redis connectivity.
 
- ## Prerequisites
+## Deploy
 
- - Pulumi CLI (>= v3): https://www.pulumi.com/docs/get-started/install/
- - Node.js (>= 14): https://nodejs.org/
- - AWS credentials configured (e.g., via `aws configure` or environment variables)
+You need Docker, Minikube, kubectl, Node.js with npm, and the Pulumi CLI.
+This setup was tested on Apple Silicon. The frontend image is built for Linux ARM64.
+The frontend expects the Redis Services to be named `redis-master` and `redis-slave`.
 
- ## Getting Started
+From the repository root:
 
- 1. Initialize a new Pulumi project:
+```bash
+minikube start -p 4ir-guestbook --driver=docker --cpus=4 --memory=6144
+npm ci
+pulumi login --local
+pulumi stack init local
+pulumi config set kubernetes:context 4ir-guestbook
+pulumi config set --secret grafanaAdminPassword
+npx tsc --noEmit
+pulumi preview
+pulumi up
+```
 
-    ```bash
-    pulumi new aws-typescript
-    ```
+Choose a Grafana password when prompted. If you already have a Pulumi backend
+and stack for this project, select that stack and run the configuration and
+deployment commands there.
 
-    Follow the prompts to set your:
-    - Project name
-    - Project description
-    - AWS region (defaults to `us-east-1`)
+## Access Grafana and Guestbook
 
- 2. Preview and deploy your infrastructure:
+Grafana is exposed as a Kubernetes `NodePort` Service. On Minikube, run
+`minikube -p 4ir-guestbook service -n monitoring monitoring-grafana --url`
+to get a browser URL through the Service, or use this local port-forward:
 
-    ```bash
-    pulumi preview
-    pulumi up
-    ```
+```bash
+kubectl --context 4ir-guestbook -n monitoring \
+  port-forward svc/monitoring-grafana 3000:80
+```
 
- 3. When you're finished, tear down your stack:
+Keep the port-forward running and open <http://localhost:3000>. Sign in as
+`admin` with the password you set during deployment. The Pulumi stack provides
+the access details:
 
-    ```bash
-    pulumi destroy
-    pulumi stack rm
-    ```
+```bash
+pulumi stack output grafanaUrl
+pulumi stack output grafanaAdminUser
+pulumi stack output grafanaAdminPassword --show-secrets
+```
 
- ## Project Layout
+To open Guestbook, run this in a separate terminal and visit
+<http://localhost:8080>:
 
- - `Pulumi.yaml` — Pulumi project and template metadata
- - `index.ts` — Main Pulumi program (creates an S3 bucket)
- - `package.json` — Node.js dependencies
- - `tsconfig.json` — TypeScript compiler options
+```bash
+kubectl --context 4ir-guestbook -n guestbook \
+  port-forward svc/frontend 8080:80
+```
 
- ## Configuration
+Submit a message and reload the page to verify the Redis write and read path.
 
- | Key           | Description                             | Default     |
- | ------------- | --------------------------------------- | ----------- |
- | `aws:region`  | The AWS region to deploy resources into | `us-east-1` |
+## Verify Prometheus collection
 
- Use `pulumi config set <key> <value>` to customize configuration.
+Open **Grafana → Explore**, select **Prometheus**, and run each query:
 
- ## Next Steps
+| Query                                                                            | Expected result                                                |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `up{namespace="guestbook",endpoint="metrics"}`                                   | Two series at `1`. Prometheus can scrape both Redis exporters. |
+| `redis_up{namespace="guestbook"}`                                                | Two series at `1`. Each exporter can reach its Redis instance. |
+| `probe_success{job="guestbook-frontend"}`                                        | One series at `1`. The frontend HTTP probe succeeds.           |
+| `probe_duration_seconds{job="guestbook-frontend"}`                               | Duration of the synthetic frontend HTTP probe, in seconds.     |
+| `container_memory_working_set_bytes{namespace="guestbook",container="frontend"}` | Memory usage series for the frontend containers.               |
 
- - Extend `index.ts` to provision additional resources (e.g., VPCs, Lambda functions, DynamoDB tables).
- - Explore [Pulumi AWSX](https://www.pulumi.com/docs/reference/pkg/awsx/) for higher-level AWS components.
- - Consult the [Pulumi documentation](https://www.pulumi.com/docs/) for more examples and best practices.
+In **Dashboards → Guestbook Overview**, confirm the four panels show data.
+Pulumi puts the exported dashboard JSON in a ConfigMap, and Grafana loads it
+automatically. The HTTP probe checks whether the frontend page responds.
+The submit-and-reload test verifies that a user can save and retrieve a message.
 
- ## Getting Help
+## Clean up
 
- If you encounter any issues or have suggestions, please open an issue in this repository.
+```bash
+pulumi destroy
+minikube delete -p 4ir-guestbook
+```
